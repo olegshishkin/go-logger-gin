@@ -1,4 +1,4 @@
-package main
+package gin
 
 const (
 	request direction = iota
