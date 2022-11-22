@@ -17,6 +17,7 @@ type rqTemplate struct {
 	remoteAddr  string
 	clientIP    string
 	path        string
+	params      string
 	headers     http.Header
 	body        string
 }
@@ -26,7 +27,21 @@ func (t *rqTemplate) shortString() string {
 }
 
 func (t *rqTemplate) String() string {
-	return fmt.Sprintf("%s %d bytes from %s ip %s, headers: %v", t.shortString(), t.size, t.remoteAddr, t.clientIP, t.headers)
+	params := ""
+	if t.params != "" {
+		params = fmt.Sprintf(", params: %s", t.params)
+	}
+
+	args := []any{
+		t.shortString(),
+		t.size,
+		t.remoteAddr,
+		t.clientIP,
+		params,
+		t.headers,
+	}
+
+	return fmt.Sprintf("%s, %d bytes from %s ip %s%s, headers: %v", args...)
 }
 
 func (t *rqTemplate) fullString() string {

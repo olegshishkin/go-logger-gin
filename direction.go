@@ -10,9 +10,9 @@ type direction int8
 func (r direction) String() string {
 	switch r {
 	case request:
-		return "-->"
+		return "--->"
 	case response:
-		return "<--"
+		return "<---"
 	default:
 		panic("unknown relation type")
 	}
