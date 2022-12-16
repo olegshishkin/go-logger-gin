@@ -2,6 +2,7 @@ package gin
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,10 +14,14 @@ type rsBodyWrapper struct {
 
 func (w *rsBodyWrapper) Write(b []byte) (int, error) {
 	w.buf.Write(b)
-	return w.ResponseWriter.Write(b)
+	length, err := w.ResponseWriter.Write(b)
+
+	return length, fmt.Errorf("failed in writer: %w", err)
 }
 
 func (w *rsBodyWrapper) WriteString(s string) (int, error) {
 	w.buf.WriteString(s)
-	return w.ResponseWriter.WriteString(s)
+	length, err := w.ResponseWriter.WriteString(s)
+
+	return length, fmt.Errorf("failed in string writer: %w", err)
 }

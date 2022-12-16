@@ -22,5 +22,6 @@ func (t *rsTemplate) fullString() string {
 	if t.size > 0 {
 		return fmt.Sprintf("%s, body: %s", t.String(), t.body)
 	}
+
 	return fmt.Sprintf("%s, %s", t.String(), noBody)
 }

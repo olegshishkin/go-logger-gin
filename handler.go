@@ -2,6 +2,7 @@ package gin
 
 import (
 	"bytes"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/gofrs/uuid"
 	"github.com/olegshishkin/go-logger"
@@ -9,68 +10,77 @@ import (
 	"time"
 )
 
+var errInvalidWriterType = errors.New("invalid writer type")
+
 // WebServerLogger provides a Gin handler for logging through the Logger interface.
-func WebServerLogger(l logger.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		switch l.GetLevel() {
+func WebServerLogger(log logger.Logger) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		switch log.GetLevel() {
 		case logger.Trace:
-			full(c, l)
+			full(ctx, log)
 		case logger.Debug, logger.Info:
-			normal(c, l)
+			normal(ctx, log)
 		case logger.Warn, logger.Error, logger.Fatal:
-			short(c)
+			short(ctx)
 		}
 	}
 }
 
 // full writes verbose logs.
-func full(c *gin.Context, l logger.Logger) {
+func full(ctx *gin.Context, log logger.Logger) {
 	start := time.Now()
 
-	rq := rqTemp(c, l)
-	rq.body = rqBody(c, l)
-	l.Trace("%s", rq.fullString())
+	rqTempl := rqTemp(ctx, log)
+	rqTempl.body = rqBody(ctx, log)
+	log.Trace("%s", rqTempl.fullString())
 
-	wrapRsBody(c)
-	c.Next()
+	wrapRsBody(ctx)
+	ctx.Next()
 
-	rs := &rsTemplate{
-		correlation: rq.correlation,
-		status:      c.Writer.Status(),
-		size:        c.Writer.Size(),
-		body:        c.Writer.(*rsBodyWrapper).buf.String(),
+	wrapper, ok := ctx.Writer.(*rsBodyWrapper)
+	if !ok {
+		log.Error(errInvalidWriterType, "failed type assertion to custom body writer")
+
+		return
+	}
+
+	rsTempl := &rsTemplate{
+		correlation: rqTempl.correlation,
+		status:      ctx.Writer.Status(),
+		size:        ctx.Writer.Size(),
+		body:        wrapper.buf.String(),
 		latency:     time.Since(start),
 	}
-	l.Trace("%s", rs.fullString())
+	log.Trace("%s", rsTempl.fullString())
 }
 
 // normal writes lightweight logs.
-func normal(c *gin.Context, l logger.Logger) {
+func normal(ctx *gin.Context, log logger.Logger) {
 	start := time.Now()
 
-	rq := rqTemp(c, l)
+	rqTempl := rqTemp(ctx, log)
 
-	switch l.GetLevel() {
+	switch log.GetLevel() {
 	case logger.Debug:
-		l.Debug("%s", rq.String())
+		log.Debug("%s", rqTempl.String())
 	case logger.Info:
-		l.Info("%s", rq.shortString())
+		log.Info("%s", rqTempl.shortString())
 	}
 
-	c.Next()
+	ctx.Next()
 
-	rs := &rsTemplate{
-		correlation: rq.correlation,
-		status:      c.Writer.Status(),
-		size:        c.Writer.Size(),
+	rsTempl := &rsTemplate{
+		correlation: rqTempl.correlation,
+		status:      ctx.Writer.Status(),
+		size:        ctx.Writer.Size(),
 		latency:     time.Since(start),
 	}
 
-	switch l.GetLevel() {
+	switch log.GetLevel() {
 	case logger.Debug:
-		l.Debug("%s", rs.String())
+		log.Debug("%s", rsTempl.String())
 	case logger.Info:
-		l.Info("%s", rs.String())
+		log.Info("%s", rsTempl.String())
 	}
 }
 
@@ -80,41 +90,42 @@ func short(c *gin.Context) {
 }
 
 // rqTemp creates a template for the request logging.
-func rqTemp(c *gin.Context, l logger.Logger) *rqTemplate {
-	rq := &rqTemplate{
-		method:     c.Request.Method,
-		size:       c.Request.ContentLength,
-		remoteAddr: c.Request.RemoteAddr,
-		clientIP:   c.ClientIP(),
-		path:       c.Request.URL.Path,
-		params:     c.Request.URL.RawQuery,
-		headers:    c.Request.Header,
+func rqTemp(ctx *gin.Context, log logger.Logger) *rqTemplate {
+	rqTempl := &rqTemplate{
+		method:     ctx.Request.Method,
+		size:       ctx.Request.ContentLength,
+		remoteAddr: ctx.Request.RemoteAddr,
+		clientIP:   ctx.ClientIP(),
+		path:       ctx.Request.URL.Path,
+		params:     ctx.Request.URL.RawQuery,
+		headers:    ctx.Request.Header,
 	}
 
 	if u, err := uuid.NewV4(); err != nil {
-		l.Error(err, "UUID hasn't been generated for request %s", rq.shortString())
+		log.Error(err, "UUID hasn't been generated for request %s", rqTempl.shortString())
 	} else {
-		rq.correlation = &u
+		rqTempl.correlation = &u
 	}
 
-	return rq
+	return rqTempl
 }
 
 // rqBody reads the request body with the ability to read it again.
-func rqBody(c *gin.Context, l logger.Logger) string {
-	if c.Request.ContentLength <= 0 {
+func rqBody(ctx *gin.Context, log logger.Logger) string {
+	if ctx.Request.ContentLength <= 0 {
 		return noBody
 	}
 
-	b, err := io.ReadAll(c.Request.Body)
+	body, err := io.ReadAll(ctx.Request.Body)
 	if err != nil {
-		l.Error(err, "Request body hasn't been read for request %s", c.Request.URL.Path)
+		log.Error(err, "Request body hasn't been read for request %s", ctx.Request.URL.Path)
+
 		return noBody
 	}
 
-	c.Request.Body = io.NopCloser(bytes.NewReader(b))
+	ctx.Request.Body = io.NopCloser(bytes.NewReader(body))
 
-	return string(b)
+	return string(body)
 }
 
 // wrapRsBody adds the ability to read response body multiple times.
